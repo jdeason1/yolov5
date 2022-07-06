@@ -1,17 +1,3 @@
-# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
-"""
-Train a YOLOv5 model on a custom dataset.
-
-Models and datasets download automatically from the latest YOLOv5 release.
-Models: https://github.com/ultralytics/yolov5/tree/master/models
-Datasets: https://github.com/ultralytics/yolov5/tree/master/data
-Tutorial: https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data
-
-Usage:
-    $ python path/to/train.py --data coco128.yaml --weights yolov5s.pt --img 640  # from pretrained (RECOMMENDED)
-    $ python path/to/train.py --data coco128.yaml --weights '' --cfg yolov5s.yaml --img 640  # from scratch
-"""
-
 import argparse
 import math
 import os
@@ -85,6 +71,15 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         with open(save_dir / 'opt.yaml', 'w') as f:
             yaml.safe_dump(vars(opt), f, sort_keys=False)
 
+    # UPDATED 2022/07/06
+    oputput_dir=opt.output_dir
+    with open(f"{opt.output_dir}/hyp.yaml",'w') as f:
+        yaml.safe_dump(hyp, f, sort_keys=False)
+    with open(f"{opt.output_dir}/opt.yaml", 'w') as f:
+        yaml.safe_dump(vars(opt), f, sort_keys=False)
+
+    data_dict = None
+    
     # Loggers
     data_dict = None
     if RANK in {-1, 0}:
@@ -102,8 +97,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     plots = not evolve and not opt.noplots  # create plots
     cuda = device.type != 'cpu'
     init_seeds(1 + RANK)
+
+    aml_path=opt.input_data
+
     with torch_distributed_zero_first(LOCAL_RANK):
-        data_dict = data_dict or check_dataset(data)  # check if None
+        data_dict = data_dict or check_dataset(data, aml_path)  # check if None
     train_path, val_path = data_dict['train'], data_dict['val']
     nc = 1 if single_cls else int(data_dict['nc'])  # number of classes
     names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
@@ -422,8 +420,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
                 # Save last, best and delete
                 torch.save(ckpt, last)
+                torch.save(ckpt, os.path.join(opt.azure_save_dir,'best.pt'))
+                torch.save(ckpt, os.path.join(opt.output_dir,'best.pt'))
                 if best_fitness == fi:
                     torch.save(ckpt, best)
+                    torch.save(ckpt, os.path.join(opt.azure_save_dir,'best.pt'))
                 if opt.save_period > 0 and epoch % opt.save_period == 0:
                     torch.save(ckpt, w / f'epoch{epoch}.pt')
                 del ckpt
@@ -505,6 +506,10 @@ def parse_opt(known=False):
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone=10, first3=0 1 2')
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--local_rank', type=int, default=-1, help='Automatic DDP Multi-GPU argument, do not modify')
+    
+    parser.add_argument('--input_data', type=str)
+    parser.add_argument('--azure_save_dir', type=str)
+    parser.add_argument('--output_dir',type=str)
 
     # Weights & Biases arguments
     parser.add_argument('--entity', default=None, help='W&B: Entity')
